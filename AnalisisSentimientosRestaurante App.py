@@ -8,8 +8,25 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from textblob import TextBlob
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
+from langdetect import detect as detectar_idioma_local, DetectorFactory
 import nltk
+
+# Hace que la detección de idioma sea determinista (mismos resultados siempre)
+DetectorFactory.seed = 0
+
+# ------------------------------------------------------------
+# MAPA DE CÓDIGOS ISO -> NOMBRES QUE ACEPTA MYMEMORYTRANSLATOR
+# (MyMemory no soporta "auto"; requiere el nombre completo del idioma)
+# ------------------------------------------------------------
+_IDIOMAS_MYMEMORY = MyMemoryTranslator(source="english", target="spanish").get_supported_languages(as_dict=True)
+_ISO2_A_NOMBRE_MYMEMORY = {}
+for _nombre, _codigo in _IDIOMAS_MYMEMORY.items():
+    _iso2 = _codigo.split("-")[0].lower()
+    if _iso2 not in _ISO2_A_NOMBRE_MYMEMORY:
+        _ISO2_A_NOMBRE_MYMEMORY[_iso2] = _nombre
+
+_NOMBRE_MYMEMORY_DESTINO = {"es": "spanish", "en": "english"}
 
 # ------------------------------------------------------------
 # DESCARGA AUTOMÁTICA DE DEPENDENCIAS DE TEXTBLOB
@@ -107,9 +124,28 @@ def traducir_texto(texto, target_lang="es"):
     except Exception:
         pass
 
-    # Método 2: Respaldo con deep-translator
+    # Método 2: Respaldo con deep-translator (GoogleTranslator)
     try:
         res = GoogleTranslator(source="auto", target=target_lang).translate(texto)
+        if res and res.strip():
+            return res, True, lang_detectado
+    except Exception:
+        pass
+
+    # Método 3: Respaldo con MyMemory (servicio distinto a Google, útil cuando
+    # Streamlit Community Cloud bloquea las IPs compartidas hacia Google).
+    # MyMemory no detecta el idioma automáticamente, así que se detecta
+    # localmente con langdetect (sin conexión a internet) antes de traducir.
+    try:
+        iso2_detectado = detectar_idioma_local(texto)
+        lang_detectado = iso2_detectado
+        nombre_origen = _ISO2_A_NOMBRE_MYMEMORY.get(iso2_detectado, "english")
+        nombre_destino = _NOMBRE_MYMEMORY_DESTINO.get(target_lang, "english")
+
+        if nombre_origen == nombre_destino:
+            return texto, True, lang_detectado
+
+        res = MyMemoryTranslator(source=nombre_origen, target=nombre_destino).translate(texto)
         if res and res.strip():
             return res, True, lang_detectado
     except Exception:

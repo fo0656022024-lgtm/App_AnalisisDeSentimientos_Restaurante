@@ -2,4 +2,5 @@ streamlit
 pandas
 textblob
 deep-translator
+langdetect
 nltk
